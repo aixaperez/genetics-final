@@ -1,0 +1,281 @@
+---
+title: "690T Final Project"
+author: "Aixa Perez-Caraballo, Meilan Chen, Alexandra Purdue-Smithe"
+date: "April 20, 2016"
+output: pdf_document
+---
+
+
+3 traits: Asthma, Irritable_bowel_syndrome, Colon_polyps
+#### Libraries
+```{r}
+library(dplyr)
+library(genetics)
+```
+
+#### Question 1
+Load the dataset using the command:
+
+```{r}
+# load data
+data <- tbl_df(read.csv(file = "/Users/aixapz/Google Drive/690T/Group1.data", header = TRUE, sep = ''))
+#Remove the SNP columns that consist entirely of NA or do not show all three possible genotypes. Use this reduced dataset in the remainder.
+names(data)
+data.snps <- tbl_df(data[, 2:5001])
+
+# remove columns don't have full snps and create the new dataset
+rs.names <- names (data)[substr(names(data),1,2)== "rs"]
+rs.snps <- makeGenotypes(data[rs.names], sep ="")
+newsnps <- rs.snps[, sapply(rs.snps, function(col)length(unique(col))) > 3]
+
+#get the dataset of the SNPs in the two genes
+other.names <- names (data)[substr(names(data),1,2)!= "rs"]
+other <- data[other.names]
+newdata <- data.frame(newsnps, other)
+```
+## Question 2 - Principal component analysis (PCA)
+
+Use PCA on the genotype data to determine whether there is evidence for population sub-structure in the data. Explain how you reached this conclusion. Assign one of four sub-population labels to each individual as follows: Choose a threshold each for principal component 1 and principal component 2 such that each individual is assigned to one of the four regions in the two dimensional space defined by these thresholds. Use the regions as labels. Choose the thresholds such that the regions and the associated labels reflect the sub-structure in the dataset. You might find that 3 labels are sufficient.
+
+```{r}
+#Create the numerical genotypes we need for __PCA__
+pca.data <- data.matrix (newdata)
+pca.data[is.na(newdata)] <- 1.5
+```
+
+```{r}
+pca.rs <- prcomp (pca.data)
+plot (pca.rs[["x"]][,1], pca.rs[["x"]][,2],
+      xlab="PC1", ylab="PC2", main="PCA")
+abline(v = 15, lty = 2)
+abline(h = -15, lty = 2)
+
+region <- ifelse(pca.rs$"x"[, 1] < 15 & pca.rs$"x"[, 2] > -15, 1, 
+                  ifelse(pca.rs$"x"[, 1] > 15 & pca.rs$"x"[, 2] > -15, 2,
+                         ifelse(pca.rs$"x"[, 1] > 15 & pca.rs$"x"[, 2] < -15, 3, 0)))
+```
+Comments:
+Principal Component Analysis (PCA) allows us to better visualize our data and consequently, our population substructures. Each SNP is defined at 0, 1, or 2 corresponding to the number of variant alleles at the corresponding site. We then complete a similarity matrix using Euclidean distances to show the similarity between two individuals. The goal of PCA is to use this matrix to identify princicpal components of the data which capture the overall variability. Results in the PCA plot show that, for our data, there are three distinct subgroups. The largest of these subgroups is located in the upper left hand quadrant of our PCA plot, we called this group "1" defined as $PC1<15 and PC2 >-15$.Within this group there were 217 individuals. The second largest group is located in the upper right hand corner of our PCA plot, we called this group "2", $PC1>15 and PC2 >-15$; there were 186 individuals within this group. The third group we identified we called group "3", $PC1>15 and PC2 <-15$. There were only 114 individuals within this group.  
+
+## Question 3 - Hardy-Weinberg Equilibrium (HWE). 
+Test for violation of HWE at each of the first 1000 SNPs of the dataset. Stratify the analysis by the population labels that you assigned in Question 2. Correct for multiple testing using the Benjamini-Hochberg procedure. Is there evidence for violation of HWE at any of the SNPs in any population?
+
+```{r}
+hwe.dat <- makeGenotypes(newdata[,1:1000], sep = "")
+hwe.ovrall <- c(rep(NA, 1000))
+for(i in 1:1000){
+  set.seed(1)
+  column <- hwe.dat[, i]
+  hwe.test <- HWE.chisq(column)$p.value
+  hwe.ovrall[i] <- hwe.test
+}
+```
+
+```{r}
+new.names <- names (newdata)[substr(names(newdata),1,4)!= "rs"]
+#defining an object for each SNP
+set.seed (1)
+# now we test each SNP
+region.pval <- c()
+for (i in 1:length(new.names)) {
+#   set.seed (1)
+  # then we get SNP
+  region.Snp <- genotype (hwe.ovrall[[new.names[,i]]], sep="")
+  # test for HWE stratified by Regions
+  hwe.region <- tapply (region.Snp, INDEX=hwe.ovrall$region,
+#                         function (x) {set.seed (1); HWE.chisq(x)$p.value})
+                        function (x) {HWE.chisq(x)$p.value})
+  print ("")
+  print (paste("===============",region.Snp[i], "==============="))
+  print (hwe.region)
+  # store pValue
+  region.pval <- append (region.pval, hwe.region)
+}
+sort(region.pval)[1:8]
+```
+
+
+## Question 4 (LD, refer to HW3)
+Linkage disequilibrium (LD). Use the first 50 SNPs of the dataset and compute a matrix of pairwise LD (measure D'). Furthermore, plot the pairwise LD structure using the function LDheatmap, and interpret the results.
+
+
+```{r}
+
+# sunbstract data
+ld.data <- newsnps[1:50]
+
+# Matrix of pairwise D' values
+LD <- round(LD (ld.data)[["D'"]], 2)
+colnames(LD) <- c(1:50)
+rownames(LD) <- c(1:50)
+
+# Visualization of LD
+LDheatmap(ld.data, LDmeasure="D'")
+
+```
+
+
+## Question 5 
+(Association: Genotype-Binary Trait, refer to HW5 (Bonferroni, BH))
+
+```{r}
+
+####################################################################
+################   fisher.test     ##################################
+####################################################################
+
+trait1 <- newdata$Irritable_bowel_syndrome
+trait2 <- newdata$Asthma
+trait3 <- newdata$Colon_polyps
+
+fischert1 <- function(Geno){
+  ObsTab <- table(trait1, Geno)
+  return(fisher.test(ObsTab)$p.value)
+}
+fischert2 <- function(Geno){
+  ObsTab <- table(trait2, Geno)
+  return(fisher.test(ObsTab)$p.value)
+}
+fischert3 <- function(Geno){
+  ObsTab <- table(trait3, Geno)
+  return(fisher.test(ObsTab)$p.value)
+}
+
+p.values1 <- apply(newsnps, 2, fischert1)
+p.values2 <- apply(newsnps, 2, fischert2)
+p.values3 <- apply(newsnps, 2, fischert3)
+
+trait1.p <- sort(p.values1)
+trait2.p <- sort(p.values2)
+trait3.p <- sort(p.values3)
+trait1.p[1:10]
+trait2.p[1:10]
+trait3.p[1:10]
+
+names(newsnps)[p.values1< 0.05]
+names(newsnps)[p.values2< 0.05]
+names(newsnps)[p.values3< 0.05]
+
+adj.pvalue1.bon <- p.adjust(p.values1, method = "bonferroni")
+adj.pvalue2.bon <- p.adjust(p.values2, method = "bonferroni")
+adj.pvalue3.bon <- p.adjust(p.values3, method = "bonferroni")
+
+names(newsnps)[adj.pvalue1.bon< 0.05]
+names(newsnps)[adj.pvalue2.bon< 0.05]
+names(newsnps)[adj.pvalue3.bon< 0.05]
+
+adj.pvalue1.bh <- p.adjust(p.values1, method = "BH")
+adj.pvalue2.bh  <- p.adjust(p.values2, method = "BH")
+adj.pvalue3.bh <- p.adjust(p.values3, method = "BH")
+
+names(newsnps)[adj.pvalue1.bh< 0.05]
+names(newsnps)[adj.pvalue2.bh< 0.05]
+names(newsnps)[adj.pvalue3.bh< 0.05]
+
+####################################################################
+################   chisq.test     ##################################
+####################################################################
+
+
+trait1 <- newdata$Irritable_bowel_syndrome
+trait2 <- newdata$Asthma
+trait3 <- newdata$Colon_polyps
+
+chisq.test1 <- function(Geno){
+  ObsTab <- table(trait1, Geno)
+  return(chisq.test(ObsTab)$p.value)
+}
+chisq.test2 <- function(Geno){
+  ObsTab <- table(trait2, Geno)
+  return(chisq.test(ObsTab)$p.value)
+}
+chisq.test3 <- function(Geno){
+  ObsTab <- table(trait3, Geno)
+  return(chisq.test(ObsTab)$p.value)
+}
+
+p.values1 <- apply(newsnps, 2, chisq.test1)
+p.values2 <- apply(newsnps, 2, chisq.test2)
+p.values3 <- apply(newsnps, 2, chisq.test3)
+
+names(newsnps)[p.values1< 0.05]
+names(newsnps)[p.values2< 0.05]
+names(newsnps)[p.values3< 0.05]
+
+adj.pvalue1.bon <- p.adjust(p.values1, method = "bonferroni")
+adj.pvalue2.bon <- p.adjust(p.values2, method = "bonferroni")
+adj.pvalue3.bon <- p.adjust(p.values3, method = "bonferroni")
+
+names(newsnps)[adj.pvalue1.bon< 0.05]
+names(newsnps)[adj.pvalue2.bon< 0.05]
+names(newsnps)[adj.pvalue3.bon< 0.05]
+
+adj.pvalue1.bh <- p.adjust(p.values1, method = "BH")
+adj.pvalue2.bh  <- p.adjust(p.values2, method = "BH")
+adj.pvalue3.bh <- p.adjust(p.values3, method = "BH")
+
+names(newsnps)[adj.pvalue1.bh< 0.05]
+names(newsnps)[adj.pvalue2.bh< 0.05]
+names(newsnps)[adj.pvalue3.bh< 0.05]
+# adj.qvalue1 <- qvalue(p.values1, pi0.method = "bootstrap")$qvalues
+# adj.qvalue2 <- qvalue(p.values2, pi0.method = "bootstrap")$qvalues
+# adj.qvalue3 <- qvalue(p.values3, pi0.method = "bootstrap")$qvalues
+# 
+# names(newsnps)[adj.qvalue1 < 0.05]
+# names(newsnps)[adj.qvalue1 < 0.05]
+# names(newsnps)[adj.qvalue1 < 0.05]
+
+
+
+
+```
+
+
+
+## Question 6
+(Effective number of tests, refer to HW5)
+```{r}
+
+snps.5 <- newsnps[,1:100]
+
+# turn into number minor alleles
+numMinor <- function (x) {
+  # get a numerical representation
+  # this counts number of copies of lexicographically larger allele
+  numGeno <- as.numeric (as.factor(x)) - 1
+  # if lexicographically larger allele is minor allele, then change nothing, otherwise reverse
+  alleles <- allele.names(genotype (as.character(x), sep="", reorder="freq"))
+  if (alleles[1] > alleles[2]) {
+    numGeno <- 2 - numGeno
+  }
+  # get rid of NA
+  numGeno[is.na(numGeno)] <- 1
+  # return it
+  return (numGeno)
+}
+# transform genotype data into numeric data
+names.Snps <- names(snps.5)
+snps.5rs <- snps.5[,is.element(names(snps.5),names.Snps)]
+rs.Num <- apply (snps.5rs, 2, numMinor)
+# compute eigenvalues
+V <- abs (cor (rs.Num))
+eValues <- eigen(V)$values
+# normal M_eff
+m <- length(eValues)
+M.eff <- 1 + (m-1) * (1 - var(eValues)/m)
+M.eff
+# and M_eff-C
+thC <- 0.95
+M.effG <- min(which(cumsum(eValues)/sum(eValues) > thC))
+M.effG 
+
+
+```
+
+
+## Question 7
+(Odds ratio, refer to HW3)
+
+
+## Question 8 
+(Association: Genotype - Quantitative Trait, refer to HW5)
