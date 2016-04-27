@@ -18,7 +18,7 @@ Load the dataset using the command:
 
 ```{r}
 # load data
-data <- tbl_df(read.csv(file = "/Users/aixapz/Google Drive/690T/Group1.data", header = TRUE, sep = ''))
+data <- tbl_df(read.csv(file = "Group1.data", header = TRUE, sep = ''))
 #Remove the SNP columns that consist entirely of NA or do not show all three possible genotypes. Use this reduced dataset in the remainder.
 names(data)
 data.snps <- tbl_df(data[, 2:5001])
@@ -45,7 +45,7 @@ pca.data[is.na(newdata)] <- 1.5
 
 ```{r}
 pca.rs <- prcomp (pca.data)
-plot (pca.rs[["x"]][,1], pca.rs[["x"]][,2],
+plot(pca.rs[["x"]][,1], pca.rs[["x"]][,2],
       xlab="PC1", ylab="PC2", main="PCA")
 abline(v = 15, lty = 2)
 abline(h = -15, lty = 2)
@@ -61,37 +61,42 @@ Principal Component Analysis (PCA) allows us to better visualize our data and co
 Test for violation of HWE at each of the first 1000 SNPs of the dataset. Stratify the analysis by the population labels that you assigned in Question 2. Correct for multiple testing using the Benjamini-Hochberg procedure. Is there evidence for violation of HWE at any of the SNPs in any population?
 
 ```{r}
-hwe.dat <- makeGenotypes(newdata[,1:1000], sep = "")
+# hwe.dat <- makeGenotypes(newdata[,1:1000], sep = "")
+hwe.dat <- newdata[, 1:1000]
 hwe.ovrall <- c(rep(NA, 1000))
 for(i in 1:1000){
   set.seed(1)
   column <- hwe.dat[, i]
   hwe.test <- HWE.chisq(column)$p.value
-  hwe.ovrall[i] <- hwe.test
+  hwe.ovrall[i] <- hwe.t4est
 }
 ```
 
 ```{r}
-new.names <- names (newdata)[substr(names(newdata),1,4)!= "rs"]
+# new.names <- names(newdata)[substr(names(newdata), 1, 4) != "rs"]
+names1000 <- names(newdata)[1:1000]
 #defining an object for each SNP
 set.seed (1)
 # now we test each SNP
 region.pval <- c()
-for (i in 1:length(new.names)) {
+for(i in 1:length(names1000)) {
 #   set.seed (1)
   # then we get SNP
-  region.Snp <- genotype (hwe.ovrall[[new.names[,i]]], sep="")
+  # region.Snp <- genotype(hwe.dat[[names1000[i]]], sep="")
+  region.Snp <- hwe.dat[[names1000[i]]]
   # test for HWE stratified by Regions
-  hwe.region <- tapply (region.Snp, INDEX=hwe.ovrall$region,
+  hwe.region <- tapply(region.Snp, INDEX = region,
 #                         function (x) {set.seed (1); HWE.chisq(x)$p.value})
-                        function (x) {HWE.chisq(x)$p.value})
-  print ("")
-  print (paste("===============",region.Snp[i], "==============="))
-  print (hwe.region)
+                        function(x){HWE.chisq(x)$p.value})
+  print("")
+  print(paste("===============", region.Snp[i], "==============="))
+  print(hwe.region)
   # store pValue
-  region.pval <- append (region.pval, hwe.region)
+  region.pval <- append(region.pval, hwe.region)
 }
 sort(region.pval)[1:8]
+sort(region.pval[region.pval < 0.05])
+cbind(region.pval, names1000)
 ```
 
 

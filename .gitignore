@@ -10,6 +10,7 @@
 
 # RStudio files
 .Rproj.user/
+genetics-final.Rproj
 
 # produced vignettes
 vignettes/*.html
