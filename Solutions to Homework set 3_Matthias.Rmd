@@ -1,0 +1,140 @@
+---
+title: "Solutions to Homework set 3"
+output: pdf_document
+---
+
+```{r, include=FALSE}
+# change output format
+knitr::opts_chunk$set (prompt=TRUE, comment=NA)
+```
+
+__Question 1__: Consider p SNPs. Write down the scalar form of a linear regression model, where each SNP has an independent additive contribution to the trait. Assume a recessive genetic model for each SNP. Be sure to define all terms explicitly. (Using the capability to insert equations into RMarkdown is strongly recommended. If this is absolutley not possible, then it is acceptable to write down the equation on paper and submit a photo.)
+
+__Answer__: Scalar form of linear regression model
+$$
+  y_i = \beta_0 + \sum_{j=1}^p \beta_j I(x_{ij,1} = a) \cdot I(x_{ij,2} = a) + \epsilon_i,
+$$
+for individual $i=1,\ldots,n$, with
+
+* trait $y_i$
+* intercept $\beta_0$
+* additive effect $\beta_j$ for SNP $j=1,\ldots,p$
+* indicator function $I()$: 1 if condition in parantheses true, 0 otherwise.
+* recessive minor allele $a$.
+* $x_{ij,k}$ allele on $k$-th homolog of individual $i$ at SNP $j$
+* noise $\epsilon_i$
+
+__Question 2__: Suppose we conduct five independent hypothesis tests for association, each at a level $\alpha$ = 0.05. Determine the upper limit for the resulting type-1 error rate for the FWEC. What is this limit if we instead conducted 50 independent $\alpha$-level tests?
+
+
+__Answer__: In general:
+$$
+  FWEC \leq 1 - (1-\alpha)^K
+$$
+when conducting $K$ tests at level $\alpha$. Thus we have as an upper bound for $K = 5$ tests
+```{r}
+alpha <- 0.05
+K <- 5
+1-(1-alpha)^K
+```
+and
+```{r}
+K <- 50
+1-(1-alpha)^K
+```
+for 50 tests.
+
+__Question 3__: Define the following terms: (a) linkage disequilibrium (LD), (b) population stratification, (c) population admixture and (d) tagSNP.
+
+__Answer__:   
+(a) Linkage disequilibrium refers to allelic association across two sites. There is __no LD__ between two sites, if the occurence of a spec. allele at site 1 is independent of the allele that is present at the other site. A key quantity is the difference between the estimated haplotype frequencies and the haplotype frequencies expected under independence  $D = p_{AB} - p_A p_B$. This quantity is zero when there is no LD, and different from zero when there is LD.
+
+(b) Population stratification refers to the presence of subgroups in the population/sample, where there is mating/gene flow within these subgroups, but little or no gene flow/mating across subgroups. Sometimes the term refers to this phenomenon, but it is also used to refer to the fact that an analysis accounts for this phenomenon.
+
+(c) Population admixture refers to the mating/gene flow between previously isolated subpopulations with different allelic distribtuions (also different LD block patterns).
+
+(d) If two SNPs are in strong LD, then knowing the allele at one SNP determines the allele at the other SNP. Thus tag SNPs are a minimal subset of SNPs that capture a majority of the genetic variability within an LD block.
+
+__Question 4__: Report the pairwise and the overall mean linkage disequilibrium (LD) (use D’) for all SNPs within the \texttt{esr1} gene for the FAMuSS data. Does this measure adequately summarize the pairwise estimates of LD between these SNPs?
+
+__Answer__: Load the FAMuSS data:
+```{r}
+fmsURL <- "http://people.umass.edu/steinruecken/data/FMS_data.txt"
+fms <- read.delim (file=fmsURL, header=T, sep="\t")
+```
+Get a list of SNPs in the __esr1__ gene:
+```{r}
+namesEsr1Snps <- names(fms)[substr (names(fms),1,4)=="esr1"]
+namesEsr1Snps
+```
+A function that combines genotype objects for a list of SNPs into a data.frame:
+```{r message=FALSE}
+library(genetics)
+makeFrame <- function (data, snps) {
+  # make a data frame with the first column
+  frame <- data.frame (genotype (data[[snps[1]]], sep=""))
+  # fill it column by column with the rest
+  for (snp in snps[-1]) {
+    frame <- cbind (frame, genotype (data[[snp]], sep=""))
+  }
+  # get the row names right
+  names (frame) <- snps
+  return (frame)
+}
+```
+Combine genotype objects for all esr1 SNPs in a data.frame using this function:
+```{r message=FALSE}
+allEsr1Snps <- makeFrame (fms, namesEsr1Snps)
+```
+And compute a matrix of pairwise LD values. I use $D'$, but using $r^2$ is correct as well.
+```{r, message=FALSE}
+ldMat <- LD(allEsr1Snps)[["D'"]]
+ldMat
+```
+Get the average of the pairwise LD's as a measure of LD for all SNPs:
+```{r}
+mean (ldMat, na.rm=T)
+```
+The pairwise LD values, as seen in ldMat, vary significantly. Some are close to one, others close to zero. Thus we would argue that this average does __not__ adequately summarize the pairwise LD values.
+
+__Question 5__: Report estimates of pairwise linkage disequilibrium (LD) (use $r^2$) for all SNPs within the AKT1 gene for the HGDP data. Do these estimates tend to vary across Geographic.area? Interpret your findings.
+
+Load the HGDP data:
+```{r}
+hgdpURL <- "http://people.umass.edu/steinruecken/data/HGDP_AKT1.txt"
+hgdp <- read.delim (file=hgdpURL, header=T, sep="\t")
+```
+Get the names of the SNPs in the AKT1 gene:
+```{r}
+namesakt1Snps <- names(hgdp)[substr (names(hgdp),1,4)=="AKT1"]
+namesakt1Snps
+```
+Get the pairwise LD at these SNPs for the whole population. I use $D'$, but using $r^2$ is correct too.
+```{r}
+# create the required data.frame of genotype objects
+allAkt1Snps <- makeFrame (hgdp, namesakt1Snps)
+# and get the pairwise LD
+ldAkt1Mat <- LD(allAkt1Snps)[["R^2"]]
+ldAkt1Mat
+```
+Overall, the SNPs _AKT1.C0756A_ and _AKT1.C6024T_ are in strong LD. The SNP _AKT1.G2347T_ is still in strong LD with the first two, although slightly less. The fourth SNP has an LD value of 0.5 with all the other ones.
+
+Now compute the pairwise LD values within each Geographic.area:
+```{r}
+# apply procedure to each Geographic.area
+for (area in levels(hgdp$Geographic.area)) {
+  print (area)
+  # get the reduced data set
+  reducedData <- hgdp[!is.na(hgdp$Geographic.area) & hgdp$Geographic.area==area,]
+  # get the required data.frame
+  allAkt1Snps <- makeFrame (reducedData, namesakt1Snps)
+  # and compute the pairwise LD
+  ldAkt1Mat <- LD(allAkt1Snps)[["R^2"]]
+  print (ldAkt1Mat)
+  print ("++++++++++++++++++")
+  print ("++++++++++++++++++")
+}
+```
+
+The LD values vary across the different populations. In almost all cases, the SNPs _AKT1.C0756A_ and _AKT1.C6024T_ have the highest LD values. We note that in _Central America_, _China_, _Japan_, _South America_, and _Southeast asia_, all four SNPs seemed to be in very high LD. The remaining populations follow more or less the global trend, with the exception of _Central Africa_ and _New Guinea_.
+
