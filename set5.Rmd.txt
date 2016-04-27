@@ -1,0 +1,209 @@
+---
+title: "Solutions to Homework set 5"
+output: pdf_document
+---
+
+```{r, include=FALSE}
+# change output format
+knitr::opts_chunk$set (prompt=TRUE, comment=NA)
+```
+Load library __genetics__, __haplo.stats__, and __qvalue__, and datasets __FAMuSS__ and __HGDP__:
+```{r message=FALSE}
+set.seed (4711)
+library (genetics)
+library (qvalue)
+library (haplo.stats)
+fmsURL <- "http://people.umass.edu/steinruecken/data/FMS_data.txt"
+fms <- read.delim (file=fmsURL, header=T, sep="\t")
+vircoURL <- "http://people.umass.edu/steinruecken/data/Virco_data.csv"
+virco <- read.csv(file=vircoURL, header=T, sep=",")
+hgdpURL <- "http://people.umass.edu/steinruecken/data/HGDP_AKT1.txt"
+hgdp <- read.delim (file=hgdpURL, header=T, sep="\t")
+```
+
+__Question 1__: Use the Bonferroni correction to test for an association between high-density
+lipoprotein cholesterol, represented by __HDL_C__, and all SNPs within the  __actn3__ gene based on
+the __FAMuSS__ data. Code the SNPs as binary indicators for the presence of at least one minor
+allele and use the t-test. Compare and contrast the result with an analysis that is not adjusted for multiple
+comparisons.
+
+__Answer__: Construct data.frame consiting of SNPs in __actn3__ gene:
+```{r}
+namesActnSnps <- names(fms)[substr(names(fms),1,5)=="actn3"]
+fmsActn <- fms[,is.element(names(fms),namesActnSnps)]
+```
+Use two-sample t-test for difference in means of the quantitative Trait to determine whether there is evidence of an association. Group 1 are the individuals homozygous for the major allele, group 2 those that have at least one minor allele. Define test function that applies t-test:
+```{r message=FALSE}
+myTTest <- function (Geno){
+  # what is the major allele
+  alleleMajor <- allele.names(genotype(Geno, sep="", reorder="freq"))[1]
+  # the genotype with both major alleles
+  GenoMaj <- paste(alleleMajor, alleleMajor, sep="")
+  # dichotomize all genotypes into homozygous major or not
+  GenoBin <- as.numeric(Geno!=GenoMaj)[!is.na(Geno)]
+  # filter NA's 
+  Trait <- fms$HDL_C[!is.na(Geno)]
+  # return p-value from t-test
+  return(t.test(Trait[GenoBin==1], Trait[GenoBin==0])$p.value)
+}
+```
+And then apply the test function to the SNPs in the __actn3__ gene:
+```{r}
+pValues <- apply (fmsActn, 2, myTTest)
+pValues
+````
+None of the test is significant at a level $\alpha = 0.05$, even without correcting for multiple testing. But as it is requested, lets do the correction anyways.
+```{r}
+corrPValues <- p.adjust (pValues, method="bonferroni")
+corrPValues
+```
+Not surpirsingly, even after correcting for multiple testing, no test is significant.
+
+
+__Question 2__: Use the Benjamini and Hochberg correction to test for an association between
+high-density lipoprotein cholesterol, represented by __HDL_C__, and all SNPs within the __resistin__ gene
+based on the __FAMuSS data__. Code the SNPs as binary indicators for the presence of at least one
+minor allele (again, use the t-test). Additionally, calculate the corresponding $q$-values to test for association. Compare
+and contrast the results with an analysis that is not adjusted for multiple comparisons.
+
+__Answer__: Construct data.frame consiting of SNPs in __resistin__ gene:
+```{r}
+namesResSnps <- names(fms)[substr(names(fms),1,8)=="resistin"]
+fmsRes <- fms[,is.element(names(fms),namesResSnps)]
+```
+Use two-sample t-test for difference in means of the quantitative Trait to determine whether there is evidence of an association. Group 1 are the individuals homozygous for the major allele, group 2 those that have at least one minor allele. Define test function that applies t-test:
+```{r message=FALSE}
+myTTest <- function (Geno){
+  # what is the major allele
+  alleleMajor <- allele.names(genotype(Geno, sep="", reorder="freq"))[1]
+  # the genotype with both major alleles
+  GenoMaj <- paste(alleleMajor, alleleMajor, sep="")
+  # dichotomize all genotypes into homozygous major or not
+  GenoBin <- as.numeric(Geno!=GenoMaj)[!is.na(Geno)]
+  # filter NA's 
+  Trait <- fms$HDL_C[!is.na(Geno)]
+  # return p-value from t-test
+  return(t.test(Trait[GenoBin==1], Trait[GenoBin==0])$p.value)
+}
+```
+And then apply the test function to the SNPs in the __resistin__ gene to get p-values:
+```{r}
+pValues <- apply (fmsRes, 2, myTTest)
+pValues
+# sort(pValues)
+```
+The results suggest a possible association at the __resistin_c180g__ SNP.
+
+Now apply the Benjamini-Hochberg procedure:
+```{r}
+sort (p.adjust (pValues, method="BH"))
+```
+And also compute $q$-values:
+```{r}
+q <- qvalue (pValues, pi0.method="bootstrap")
+qVal <- q$qvalues
+sort(qVal)
+```
+Alternative q-values:
+```{r}
+q <- qvalue (pValues, lambda=0)
+qVal <- q$qvalues
+sort(qVal)
+```
+When we correct for multiple testing, there is no significant association at any SNP.
+
+__Question 3__: Use the __FAMuSS__ data to determine whether there is an association between the presence of at least one minor allele in each of the four SNPs within the __actn3__ gene and the quantitative trait change in non-dominant arm muscle strength, given by __NDRM.CH__. Apply the free step-down resampling approach to adjust for multiple testing (B = 1000).
+
+__Answer__: Indicator function:
+```{r}
+indicatorLeastOneMinor <- function (geno) {
+  # what is the major allele
+  alleleMajor <- allele.names (genotype (geno, sep="", reorder="freq"))[1]
+  # the genotype with both major alleles
+  genoMaj <- paste (alleleMajor, alleleMajor, sep="")
+  # dichotomize into at least one minor or not
+  genoBin <- as.numeric (geno!=genoMaj)
+  return (genoBin)
+} 
+```
+Find the right SNPs and transform the genotypes into indicators:
+```{r}
+namesActnSnps <- names(fms)[substr(names(fms),1,5)=="actn3"]
+fmsActn <- fms[,is.element(names(fms),namesActnSnps)]
+actnBin <- data.frame (apply (fmsActn, 2, indicatorLeastOneMinor))
+```
+Fit a linear model and remember values of test statistic:
+```{r}
+mod <- summary (lm (fms$NDRM.CH ~ . , data=actnBin))
+testStatObs <- mod$coefficients[-1,3]
+tObs <- as.vector (sort (abs (testStatObs)))
+mod
+```
+Remove missing data and record order of statistics:
+```{r}
+missDat <- apply (is.na (actnBin), 1, any) | is.na (fms$NDRM.CH)
+actnBinC <- actnBin[!missDat,]
+ord <- order (abs (testStatObs))
+```
+Resample __residuals__  $B=1000$ times to approx. null distribution:
+```{r}
+set.seed(4235)
+B <- 1000
+nSnps <- 4
+nObs <- nrow (actnBinC)
+testStatResamp <- matrix (nrow=B, ncol=nSnps)
+for (b in 1:B){
+  yNew <- sample (mod$residuals, size=nObs, replace=T)
+  modResamp <- summary (lm (yNew ~ . , data=actnBinC))
+  testStatResamp[b,] <-
+    abs (modResamp$coefficients[-1,3])[ord]
+}
+```
+Compare observed to bootstrap simulated and adjust values:
+```{r}
+qMat <- t (apply (testStatResamp, 1, cummax))
+pAdj <- apply (t (matrix (rep (tObs,B), 4)) < qMat, 2, mean)
+pAdj
+```
+After the multiple testing correction, we find no significant association with any SNP.
+
+__Question 4__: Determine the effective number of tests ($M_\text{eff}$ and $M_\text{eff-G}$ with $C = 0.95$) if we
+were to test for an association between each of the four __AKT1__ SNPs and a trait using the __HGDP__
+data. Encode the genotypes numerically as the number of minor alleles (set _NA_ to 1). Use the
+absolute value of Pearson’s correlation coefficient (implemented in R as the function cor) as a
+measure of correlation between two SNPs. (Hint: The function eigen can be used to compute eigenvalues in R).
+
+__Answer__:
+```{r}
+# turn into number minor alleles
+numMinor <- function (geno) {
+  # get a numerical representation
+  # this counts number of copies of lexicographically larger allele
+  numGeno <- as.numeric (as.factor(geno)) - 1
+  # if lexicographically larger allele is minor allele, then change nothing, otherwise reverse
+  alleles <- allele.names(genotype (as.character(geno), sep='', reorder='freq'))
+  if (alleles[1] > alleles[2]) {
+    numGeno <- 2 - numGeno
+  }
+  # get rid of NA
+  numGeno[is.na(numGeno)] <- 1
+  # return it
+  return (numGeno)
+}
+# transform genotype data into numeric data
+namesAktSnps <- names(hgdp)[substr (names(hgdp),1,4)=="AKT1"]
+hgdpAkt <- hgdp[,is.element(names(hgdp),namesAktSnps)]
+hgdpAktNum <- apply (hgdpAkt, 2, numMinor)
+# compute eigenvalues
+V <- abs (cor (hgdpAktNum))
+eValues <- eigen(V)$values
+# normal M_eff
+m <- length(eValues)
+mEff <- 1 + (m-1) * (1 - var(eValues)/m)
+mEff
+# and M_eff-C
+thC <- 0.95
+mEffC <- min(which(cumsum(eValues)/sum(eValues) > thC))
+mEffC
+```
+
