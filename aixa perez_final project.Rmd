@@ -94,9 +94,12 @@ for(i in 1:length(names1000)) {
   # store pValue
   region.pval <- append(region.pval, hwe.region)
 }
-sort(region.pval)[1:8]
-sort(region.pval[region.pval < 0.05])
-cbind(region.pval, names1000)
+# rename the objects. Brains couldn't think of good names 
+test <- cbind(region.pval, names1000) # combined region.pvalues with snp names
+test1 <- which(region.pval < 0.05) # selects index/which row the region.pval are less than 0.05
+test2 <- unname(test1) # here we are getting rid of the regions b/c it's doing something strange
+test3 <- test[test2, ] # now we can index the sig. p-values to get the region, p.value, and snp
+# note, this is a really ugly work around but it works for now
 ```
 
 
